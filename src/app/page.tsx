@@ -1162,14 +1162,14 @@ export default function Home() {
                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium bg-primary/8 text-primary transition-colors"
                 aria-current="page"
               >
-                <span className="text-base">⊞</span>
+                <span className="text-base">🏠</span>
                 Dashboard
               </a>
               <a
                 href="/audit"
                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted hover:bg-slate-50 hover:text-foreground transition-colors"
               >
-                <span className="text-base">▤</span>
+                <span className="text-base">📋</span>
                 Audit Trail
               </a>
             </nav>
