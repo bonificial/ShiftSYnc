@@ -1,5 +1,7 @@
 # ShiftSync
 
+**Live demo → [shift-s-ync.vercel.app](https://shift-s-ync.vercel.app)**
+
 Multi-location staff scheduling platform built for the Priority Soft Full-Stack Developer Assessment.
 Stack: **Next.js 16 · Tailwind v4 · Prisma · PostgreSQL (Supabase) · TypeScript**.
 

@@ -66,6 +66,8 @@ All demo accounts are pre-seeded. Use the **"Demo accounts"** dropdown on the lo
 
 ## 2. Running the Application
 
+**Live deployment:** [https://shift-s-ync.vercel.app](https://shift-s-ync.vercel.app)
+
 ```bash
 # 1. Install dependencies
 npm install
