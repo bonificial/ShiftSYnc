@@ -62,7 +62,12 @@ export async function GET() {
         take: 10,
       }),
       prisma.swapRequest.count({
-        where: { status: { in: ["PENDING_PARTY_ACCEPTANCE", "PENDING_MANAGER_APPROVAL"] } },
+        where: {
+          status: { in: ["PENDING_PARTY_ACCEPTANCE", "PENDING_MANAGER_APPROVAL"] },
+          ...(user.role === "STAFF"
+            ? { OR: [{ requesterId: user.id }, { targetUserId: user.id }] }
+            : {}),
+        },
       }),
       // Staff currently on duty right now
       prisma.shiftAssignment.findMany({

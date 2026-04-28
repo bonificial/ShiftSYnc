@@ -266,22 +266,20 @@ export default function Home() {
         .then((d) => { if (d?.notifPref) setNotifPref(d.notifPref as "IN_APP" | "IN_APP_EMAIL"); })
         .catch(() => null);
 
-      if (data.user.role === "ADMIN" || data.user.role === "MANAGER") {
-        const staffRes = await fetch("/api/staff", { cache: "no-store" });
-        if (staffRes.ok) {
-          const staffData = await staffRes.json();
-          setStaffOptions(staffData.staff ?? []);
-        } else {
-          setStaffOptions([]);
-        }
+      const staffRes = await fetch("/api/staff", { cache: "no-store" });
+      if (staffRes.ok) {
+        const staffData = await staffRes.json();
+        setStaffOptions(staffData.staff ?? []);
       } else {
         setStaffOptions([]);
       }
 
+      const availShiftsFetch = fetch("/api/shifts/available", { cache: "no-store" });
+
       if (data.user.role === "STAFF") {
         const [availRes, availShiftsRes] = await Promise.all([
           fetch("/api/availability", { cache: "no-store" }),
-          fetch("/api/shifts/available", { cache: "no-store" }),
+          availShiftsFetch,
         ]);
         if (availRes.ok) {
           const ad = await availRes.json();
@@ -299,6 +297,14 @@ export default function Home() {
           );
           setAvailabilityExceptions(ad.exceptions ?? []);
         }
+        if (availShiftsRes.ok) {
+          const sd = await availShiftsRes.json();
+          setAvailableShifts(sd.available ?? []);
+        } else {
+          setAvailableShifts([]);
+        }
+      } else {
+        const availShiftsRes = await availShiftsFetch;
         if (availShiftsRes.ok) {
           const sd = await availShiftsRes.json();
           setAvailableShifts(sd.available ?? []);
@@ -855,7 +861,15 @@ export default function Home() {
   );
 
   const mySwaps = useMemo(
-    () => (user ? swaps.filter((sw) => sw.requesterId === user.id || sw.targetUserId === user.id) : []),
+    () =>
+      user
+        ? swaps.filter(
+            (sw) =>
+              (sw.requesterId === user.id || sw.targetUserId === user.id) &&
+              // exclude swaps already shown in the "Requests targeting you" block
+              !(sw.targetUserId === user.id && sw.status === "PENDING_PARTY_ACCEPTANCE"),
+          )
+        : [],
     [swaps, user],
   );
 
@@ -1258,13 +1272,22 @@ export default function Home() {
                       </p>
                     )}
                     <p className="text-xs text-muted">{sw.requiredSkill} @ {LOCATION_LABELS[sw.locationId ?? ""] ?? sw.locationId}</p>
-                    <button
-                      disabled={acceptingSwapId === sw.id}
-                      onClick={() => acceptSwap(sw.id)}
-                      className="mt-2 rounded-md bg-primary px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {acceptingSwapId === sw.id ? "Accepting…" : "Accept Swap"}
-                    </button>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        disabled={!!acceptingSwapId || !!cancellingSwapId}
+                        onClick={() => acceptSwap(sw.id)}
+                        className="rounded-md bg-primary px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {acceptingSwapId === sw.id ? "Accepting…" : "Accept"}
+                      </button>
+                      <button
+                        disabled={!!acceptingSwapId || !!cancellingSwapId}
+                        onClick={() => cancelSwap(sw.id)}
+                        className="rounded-md border border-danger/40 px-2 py-1 text-xs text-danger disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {cancellingSwapId === sw.id ? "Declining…" : "Decline"}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1332,31 +1355,33 @@ export default function Home() {
             </div>
           </section>
 
-          {/* ── Available Shifts to Pick Up (Staff only) ───────────────── */}
-          {user.role === "STAFF" && (
-            <section className="rounded-2xl bg-card p-5 shadow-sm">
-              <h3 className="text-lg font-semibold">Available Shifts to Pick Up</h3>
-              <p className="mt-1 text-sm text-muted">Open drop requests you qualify for.</p>
-              <div className="mt-3 space-y-2">
-                {availableShifts.length === 0 && (
-                  <p className="text-sm text-muted">No available shifts right now.</p>
-                )}
-                {availableShifts
-                  .filter((s) => !myShiftIds.has(s.shiftId))
-                  .map((s) => (
-                    <div key={s.swapRequestId} className="flex items-start justify-between rounded-xl border p-3">
-                      <div>
-                        <p className="text-sm font-medium">
-                          {s.requiredSkill}{" "}
-                          <span className="text-muted">@ {LOCATION_LABELS[s.locationId] ?? s.locationId}</span>
-                        </p>
-                        <p className="text-xs text-muted">
-                          {fmtShift(s.startsAt, s.endsAt)}
-                        </p>
-                        {s.requesterName && (
-                          <p className="text-xs text-muted">Dropped by {s.requesterName}</p>
-                        )}
-                      </div>
+          {/* ── Open Drop Requests — available to pick up ───────────────── */}
+          <section className="rounded-2xl bg-card p-5 shadow-sm">
+            <h3 className="text-lg font-semibold">Open Drop Requests</h3>
+            <p className="mt-1 text-sm text-muted">
+              {user.role === "STAFF"
+                ? "Shifts colleagues have dropped that you qualify for — claim one to pick it up."
+                : "Shifts currently offered for pickup by staff (open drop requests)."}
+            </p>
+            <div className="mt-3 space-y-2">
+              {availableShifts.filter((s) => !myShiftIds.has(s.shiftId)).length === 0 && (
+                <p className="text-sm text-muted">No open drop requests right now.</p>
+              )}
+              {availableShifts
+                .filter((s) => !myShiftIds.has(s.shiftId))
+                .map((s) => (
+                  <div key={s.swapRequestId} className="flex items-start justify-between rounded-xl border p-3">
+                    <div>
+                      <p className="text-sm font-medium">
+                        {s.requiredSkill}{" "}
+                        <span className="text-muted">@ {LOCATION_LABELS[s.locationId] ?? s.locationId}</span>
+                      </p>
+                      <p className="text-xs text-muted">{fmtShift(s.startsAt, s.endsAt)}</p>
+                      {s.requesterName && (
+                        <p className="text-xs text-muted">Dropped by {s.requesterName}</p>
+                      )}
+                    </div>
+                    {user.role === "STAFF" && (
                       <button
                         disabled={claimingSwapId === s.swapRequestId}
                         onClick={() => claimShift(s.swapRequestId)}
@@ -1364,11 +1389,11 @@ export default function Home() {
                       >
                         {claimingSwapId === s.swapRequestId ? "Claiming…" : "Claim Shift"}
                       </button>
-                    </div>
-                  ))}
-              </div>
-            </section>
-          )}
+                    )}
+                  </div>
+                ))}
+            </div>
+          </section>
 
           {/* ── Overtime Projection (managers/admins only) ─────────────── */}
           {(user.role === "MANAGER" || user.role === "ADMIN") && (
@@ -1948,9 +1973,23 @@ export default function Home() {
                             </label>
                           </div>
                           {swapFormType === "SWAP" && (
-                            <p className="text-xs text-muted">
-                              A swap request will be sent to a colleague. They can accept, then a manager approves.
-                            </p>
+                            <div className="space-y-1.5">
+                              <p className="text-xs text-muted">
+                                Select the colleague you want to swap with. They must accept, then a manager approves.
+                              </p>
+                              <select
+                                className="w-full rounded-md border px-2 py-1.5 text-xs"
+                                value={swapFormTargetId}
+                                onChange={(e) => setSwapFormTargetId(e.target.value)}
+                              >
+                                <option value="">— Select colleague —</option>
+                                {staffOptions
+                                  .filter((s) => s.id !== user?.id)
+                                  .map((s) => (
+                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                  ))}
+                              </select>
+                            </div>
                           )}
                           {swapFormType === "DROP" && (
                             <p className="text-xs text-muted">
@@ -1960,7 +1999,7 @@ export default function Home() {
                           <div className="flex gap-2">
                             <button
                               type="button"
-                              disabled={isCreatingSwap}
+                              disabled={isCreatingSwap || (swapFormType === "SWAP" && !swapFormTargetId)}
                               onClick={submitSwapRequest}
                               className="rounded-md bg-primary px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
                             >

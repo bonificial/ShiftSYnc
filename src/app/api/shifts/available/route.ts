@@ -5,23 +5,41 @@ import { expireStaleDrops } from "@/lib/expiry";
 
 export async function GET() {
   const user = await currentUser();
-  if (!user || user.role !== "STAFF") {
-    return NextResponse.json({ error: "Only staff can view available shifts" }, { status: 403 });
-  }
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await expireStaleDrops(prisma);
 
-  const [myCertifications, mySkills, myAssignments, openDropRequests] = await Promise.all([
+  const openDropRequests = await prisma.swapRequest.findMany({
+    where: { type: "DROP", status: "PENDING_MANAGER_APPROVAL", targetUserId: null },
+    include: {
+      shift: true,
+      requester: { select: { name: true } },
+    },
+  });
+
+  // Managers and admins see all open drops — no filtering needed
+  if (user.role !== "STAFF") {
+    return NextResponse.json(
+      {
+        available: openDropRequests.map((req) => ({
+          swapRequestId: req.id,
+          shiftId: req.shift.id,
+          locationId: req.shift.locationId,
+          requiredSkill: req.shift.requiredSkill,
+          startsAt: req.shift.startsAt,
+          endsAt: req.shift.endsAt,
+          requesterName: req.requester.name,
+        })),
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
+  // Staff: filter to shifts they are actually qualified and available for
+  const [myCertifications, mySkills, myAssignments] = await Promise.all([
     prisma.certification.findMany({ where: { userId: user.id }, select: { locationId: true } }),
     prisma.userSkill.findMany({ where: { userId: user.id }, select: { skill: true } }),
     prisma.shiftAssignment.findMany({ where: { userId: user.id }, include: { shift: true } }),
-    prisma.swapRequest.findMany({
-      where: { type: "DROP", status: "PENDING_MANAGER_APPROVAL", targetUserId: null },
-      include: {
-        shift: true,
-        requester: { select: { name: true } },
-      },
-    }),
   ]);
 
   const myCertSet = new Set(myCertifications.map((c) => c.locationId));

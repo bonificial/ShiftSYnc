@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   const user = await currentUser();
-  if (!user || !["ADMIN", "MANAGER"].includes(user.role)) {
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -28,7 +28,7 @@ export async function GET() {
   });
 
   const scopedStaff =
-    user.role === "ADMIN"
+    user.role === "ADMIN" || user.role === "STAFF"
       ? staff
       : staff.filter((s) =>
           s.certifications.some((cert) => managerLocationIds.includes(cert.locationId)),

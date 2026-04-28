@@ -42,6 +42,13 @@ export async function POST(request: NextRequest) {
   const type = body.type === "DROP" ? "DROP" : "SWAP";
   const targetUserId = body.targetUserId ? String(body.targetUserId) : undefined;
 
+  if (type === "SWAP" && !targetUserId) {
+    return NextResponse.json(
+      { error: "A SWAP request requires selecting a specific colleague to swap with." },
+      { status: 400 },
+    );
+  }
+
   const [shift, targetUser] = await Promise.all([
     prisma.shift.findFirst({
       where: { id: shiftId, assignments: { some: { userId: user.id } } },
