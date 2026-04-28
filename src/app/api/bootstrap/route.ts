@@ -39,7 +39,7 @@ export async function GET() {
     await Promise.all([
       prisma.shift.findMany({
         where: shiftWhere,
-        include: { assignments: true },
+        include: { assignments: { include: { user: { select: { id: true, name: true } } } } },
         orderBy: { startsAt: "asc" },
         take: 20,
       }),
@@ -94,6 +94,7 @@ export async function GET() {
     endsAt: s.endsAt,
     published: s.published,
     assigneeIds: s.assignments.map((a) => a.userId),
+    assigneeNames: s.assignments.map((a) => a.user?.name ?? "Unknown"),
   }));
 
   const openShifts = shiftsRaw.filter((s) => s.assignments.length < s.headcountNeeded).length;

@@ -36,6 +36,7 @@ export interface Shift {
   endsAt: string;
   published: boolean;
   assigneeIds: string[];
+  assigneeNames: string[];
   createdBy: string;
 }
 
