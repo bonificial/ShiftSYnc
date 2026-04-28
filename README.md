@@ -65,7 +65,6 @@ Stack: **Next.js 16 · Tailwind v4 · Prisma · PostgreSQL (Supabase) · TypeScr
 ## Quick start
 
 ```bash
-cd frontend
 cp .env.local.example .env.local   # fill in DATABASE_URL and DIRECT_URL
 npm install
 npm run db:push
@@ -80,30 +79,30 @@ Open [http://localhost:3000](http://localhost:3000) and use the **Demo accounts*
 ## Repo structure
 
 ```
-ShiftSYnc/
-├── frontend/
-│   ├── prisma/
-│   │   ├── schema.prisma          # database schema
-│   │   ├── seed/                  # modular realistic seed dataset
-│   │   └── seed.ts                # legacy seed (retained for reference)
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── api/               # all API routes (auth, shifts, swaps, …)
-│   │   │   ├── page.tsx           # single-page dashboard
-│   │   │   ├── layout.tsx
-│   │   │   └── globals.css
-│   │   └── lib/
-│   │       ├── auth.ts            # session + RBAC
-│   │       ├── labor.ts           # overtime / labor law checks
-│   │       ├── notify.ts          # central notification helper
-│   │       ├── broadcast.ts       # SSE client registry
-│   │       ├── expiry.ts          # drop expiry + swap auto-cancel
-│   │       ├── tz.ts              # timezone utilities
-│   │       └── shiftLabel.ts      # human-readable shift IDs
-│   ├── DOCUMENTATION.md
-│   ├── RUNNING_APP.md
-│   └── project.MD
-├── DOCUMENTATION.md               # (same file, also at repo root)
+ShiftSync/
+├── prisma/
+│   ├── schema.prisma          # database schema
+│   ├── seed/                  # modular realistic seed dataset
+│   └── seed.ts                # legacy seed (retained for reference)
+├── src/
+│   ├── app/
+│   │   ├── api/               # all API routes (auth, shifts, swaps, …)
+│   │   ├── page.tsx           # single-page dashboard
+│   │   ├── layout.tsx
+│   │   └── globals.css
+│   └── lib/
+│       ├── auth.ts            # session + RBAC
+│       ├── labor.ts           # overtime / labor law checks
+│       ├── notify.ts          # central notification helper
+│       ├── broadcast.ts       # SSE client registry
+│       ├── expiry.ts          # drop expiry + swap auto-cancel
+│       ├── tz.ts              # timezone utilities
+│       └── shiftLabel.ts      # human-readable shift IDs
+├── public/                    # static assets (logo, background image)
+├── DOCUMENTATION.md
 ├── RUNNING_APP.md
-└── project.MD
+├── project.MD
+├── package.json
+├── next.config.ts
+└── tsconfig.json
 ```

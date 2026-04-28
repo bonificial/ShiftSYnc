@@ -68,10 +68,10 @@ All demo accounts are pre-seeded. Use the **"Demo accounts"** dropdown on the lo
 
 ```bash
 # 1. Install dependencies
-cd frontend && npm install
+npm install
 
 # 2. Set environment variables (copy and fill in .env.local)
-cp .env.example .env.local
+cp .env.local.example .env.local
 # Required: DATABASE_URL, DIRECT_URL (Supabase PostgreSQL)
 
 # 3. Push schema and seed

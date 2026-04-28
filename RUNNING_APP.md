@@ -23,11 +23,10 @@
 
 ## Project Structure
 
-- `frontend/` -> Next.js app (UI + API routes)
-- `frontend/src/app/api` -> backend endpoints
-- `frontend/src/lib` -> auth, Prisma client, scheduling logic
-- `frontend/prisma/schema.prisma` -> database schema
-- `frontend/prisma/seed.ts` -> seeded demo data
+- `src/app/api/` → API routes (auth, shifts, swaps, availability, notifications, audit, realtime)
+- `src/lib/` → auth, Prisma client, labor law, notify, broadcast, tz, expiry utilities
+- `prisma/schema.prisma` → database schema
+- `prisma/seed/` → modular realistic seed dataset
 
 ## Requirements
 
@@ -37,7 +36,6 @@
 ## Install and run
 
 ```bash
-cd frontend
 npm install
 npm run db:generate
 npm run db:push
@@ -83,7 +81,7 @@ Open: `http://localhost:3000`
 ## Notes
 
 - Data persistence is now via Prisma + PostgreSQL.
-- For local setup, copy `frontend/.env.local.example` to `frontend/.env.local` and set real Supabase values.
+- For local setup, copy `.env.local.example` to `.env.local` and set real Supabase values.
 - Supabase requires SSL; keep `sslmode=require` in connection strings.
 
 ## Supabase setup values required from you
