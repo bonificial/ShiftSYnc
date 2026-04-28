@@ -1,0 +1,31 @@
+# Dependencies
+frontend/node_modules/
+frontend/.pnp
+frontend/.pnp.*
+
+# Next.js build output
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Env files — never commit secrets
+frontend/.env
+frontend/.env.local
+frontend/.env*.local
+
+# TypeScript build info
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# Misc
+.DS_Store
+*.pem
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Vercel
+frontend/.vercel
+
+# Leftover inner git skeleton
+frontend/.git/
