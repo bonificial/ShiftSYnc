@@ -18,6 +18,12 @@ export async function POST(
     request.json(),
   ]);
   if (!shift) return NextResponse.json({ error: "Shift not found" }, { status: 404 });
+  if (!shift.published) return NextResponse.json({ error: "Cannot assign staff to an unpublished shift." }, { status: 400 });
+
+  const currentCount = await prisma.shiftAssignment.count({ where: { shiftId: id } });
+  if (currentCount >= shift.headcountNeeded) {
+    return NextResponse.json({ error: `Shift is already at full capacity (${shift.headcountNeeded}/${shift.headcountNeeded}).` }, { status: 400 });
+  }
 
   const assigneeId = String(body.assigneeId ?? "");
   if (!assigneeId) return NextResponse.json({ error: "assigneeId required" }, { status: 400 });

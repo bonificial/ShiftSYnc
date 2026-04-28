@@ -7,6 +7,50 @@ import { broadcast } from "@/lib/broadcast";
 import { notify } from "@/lib/notify";
 import { getLocalParts, isOvernightShift } from "@/lib/tz";
 
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  const [user, { id }] = await Promise.all([currentUser(), context.params]);
+  if (!user || !["ADMIN", "MANAGER"].includes(user.role)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const userId = String(body.userId ?? "");
+  if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
+
+  const shift = await prisma.shift.findUnique({
+    where: { id },
+    select: { id: true, seqId: true, startsAt: true, endsAt: true, locationId: true, headcountNeeded: true },
+  });
+  if (!shift) return NextResponse.json({ error: "Shift not found" }, { status: 404 });
+
+  const assignment = await prisma.shiftAssignment.findUnique({
+    where: { shiftId_userId: { shiftId: id, userId } },
+    include: { user: { select: { name: true } } },
+  });
+  if (!assignment) return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
+
+  await prisma.shiftAssignment.delete({ where: { shiftId_userId: { shiftId: id, userId } } });
+
+  const label = shiftLabel(shift.seqId, shift.startsAt, shift.endsAt);
+  await Promise.all([
+    notify({ userId, title: "Unassigned from shift", body: `You have been unassigned from ${label}.` }),
+    prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        action: "SHIFT_UNASSIGNED",
+        before: JSON.parse(JSON.stringify({ shiftId: id, userId, assigneeName: assignment.user.name, locationId: shift.locationId })),
+        after: JSON.parse(JSON.stringify({ shiftId: id, label })),
+      },
+    }),
+  ]);
+
+  broadcast("shift_update", { shiftId: id, action: "unassigned" });
+  return NextResponse.json({ ok: true });
+}
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -21,6 +65,10 @@ export async function POST(
     request.json(),
   ]);
   if (!shift) return NextResponse.json({ error: "Shift not found" }, { status: 404 });
+  if (!shift.published) return NextResponse.json({ error: "Cannot assign staff to an unpublished shift. Publish the shift first." }, { status: 400 });
+  if (shift.assignments.length >= shift.headcountNeeded) {
+    return NextResponse.json({ error: `This shift is already at full capacity (${shift.headcountNeeded}/${shift.headcountNeeded}).` }, { status: 400 });
+  }
 
   const assigneeId = String(body.assigneeId ?? "");
   const overrideReason: string | undefined = body.overrideReason ? String(body.overrideReason) : undefined;
