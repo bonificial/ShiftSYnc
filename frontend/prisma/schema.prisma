@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+enum Skill {
+  bartender
+  line_cook
+  server
+  host
+}
+
+enum SwapType {
+  SWAP
+  DROP
+}
+
+enum SwapStatus {
+  PENDING_PARTY_ACCEPTANCE
+  PENDING_MANAGER_APPROVAL
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum NotifPref {
+  IN_APP
+  IN_APP_EMAIL
+}
+
+model User {
+  id             String           @id @default(cuid())
+  name           String
+  email          String           @unique
+  password       String
+  role           Role
+  notifPref      NotifPref        @default(IN_APP)
+  desiredHours   Int              @default(40)
+  skills         UserSkill[]
+  certifications Certification[]
+  availability   AvailabilityWindow[]
+  availabilityExceptions AvailabilityException[]
+  sessions       Session[]
+  assignments    ShiftAssignment[]
+  notifications  Notification[]
+  requesterSwaps SwapRequest[]    @relation("RequesterSwaps")
+  targetSwaps    SwapRequest[]    @relation("TargetSwaps")
+  auditLogs      AuditLog[]
+}
+
+model Location {
+  id             String           @id
+  name           String
+  timezone       String
+  certifications Certification[]
+  shifts         Shift[]
+}
+
+model Certification {
+  id         String   @id @default(cuid())
+  userId     String
+  locationId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, locationId])
+}
+
+model UserSkill {
+  id     String @id @default(cuid())
+  userId String
+  skill  Skill
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skill])
+}
+
+model AvailabilityWindow {
+  id        String @id @default(cuid())
+  userId    String
+  dayOfWeek Int
+  startHour Int
+  endHour   Int
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, dayOfWeek])
+}
+
+model AvailabilityException {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime
+  isOff     Boolean  @default(false)
+  startHour Int?
+  endHour   Int?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Shift {
+  id             String            @id @default(cuid())
+  seqId          Int               @default(autoincrement()) @unique
+  locationId     String
+  requiredSkill  Skill
+  headcountNeeded Int
+  startsAt       DateTime
+  endsAt         DateTime
+  published      Boolean           @default(false)
+  createdBy      String
+  location       Location          @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  assignments    ShiftAssignment[]
+  swaps          SwapRequest[]
+}
+
+model ShiftAssignment {
+  id      String @id @default(cuid())
+  shiftId String
+  userId  String
+  shift   Shift  @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shiftId, userId])
+}
+
+model SwapRequest {
+  id           String      @id @default(cuid())
+  shiftId       String
+  requesterId   String
+  targetUserId  String?
+  type          SwapType
+  status        SwapStatus
+  createdAt     DateTime    @default(now())
+  shift         Shift        @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  requester     User         @relation("RequesterSwaps", fields: [requesterId], references: [id], onDelete: Cascade)
+  targetUser    User?        @relation("TargetSwaps", fields: [targetUserId], references: [id], onDelete: SetNull)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  emailed   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  action    String
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+  actor     User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  token     String   @id
+  userId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
