@@ -1154,18 +1154,25 @@ export default function Home() {
             )}
           </div>
 
-          {/* ── Audit Trail link (managers + admins) ─────────────── */}
+          {/* ── Navigation (managers + admins) ───────────────────── */}
           {(user.role === "MANAGER" || user.role === "ADMIN") && (
-            <a
-              href="/audit"
-              className="flex items-center justify-between rounded-2xl border bg-card px-4 py-3 shadow-sm text-sm hover:bg-slate-50 transition-colors"
-            >
-              <div>
-                <p className="font-medium">Audit Trail</p>
-                <p className="text-xs text-muted mt-0.5">All schedule changes</p>
-              </div>
-              <span className="text-muted text-base">→</span>
-            </a>
+            <nav className="rounded-2xl bg-card p-3 shadow-sm flex flex-col gap-1">
+              <a
+                href="/"
+                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium bg-primary/8 text-primary transition-colors"
+                aria-current="page"
+              >
+                <span className="text-base">⊞</span>
+                Dashboard
+              </a>
+              <a
+                href="/audit"
+                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted hover:bg-slate-50 hover:text-foreground transition-colors"
+              >
+                <span className="text-base">▤</span>
+                Audit Trail
+              </a>
+            </nav>
           )}
 
           <button

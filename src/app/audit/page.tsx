@@ -18,6 +18,7 @@ export default function AuditPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [page, setPage] = useState(0);
@@ -61,6 +62,12 @@ export default function AuditPage() {
     if (!loading && user) void load(0);
   }, [loading, user]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  async function logout() {
+    setIsLoggingOut(true);
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+    router.push("/");
+  }
+
   function exportCsv() {
     const params = new URLSearchParams();
     if (filter.from) params.set("from", filter.from);
@@ -94,172 +101,204 @@ export default function AuditPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
-      {/* Top bar */}
-      <header className="flex items-center gap-4 border-b bg-card px-6 py-3 shadow-sm">
-        <button
-          onClick={() => router.push("/")}
-          className="flex items-center gap-2 text-sm text-muted hover:text-foreground"
-        >
-          <Image src="/logo.webp" alt="ShiftSync" width={28} height={28} style={{ height: "auto" }} />
-          <span className="font-semibold">ShiftSync</span>
-        </button>
-        <span className="text-muted">/</span>
-        <span className="text-sm font-medium">Audit Trail</span>
-        <div className="ml-auto text-xs text-muted">{user?.name} · {user?.role}</div>
-        <button
-          onClick={() => router.push("/")}
-          className="rounded-md border px-3 py-1 text-xs hover:bg-slate-100"
-        >
-          ← Back to dashboard
-        </button>
-      </header>
+    <div className="min-h-screen p-5 md:p-8 bg-slate-50">
+      <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-5 lg:grid-cols-[260px_1fr]">
 
-      <main className="mx-auto w-full max-w-6xl flex-1 p-6">
-        <div className="rounded-2xl bg-card p-6 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-xl font-semibold">Audit Trail</h1>
-              <p className="mt-0.5 text-sm text-muted">All schedule changes — who, when, and what changed.</p>
-            </div>
-            {user?.role === "ADMIN" && (
-              <button
-                onClick={exportCsv}
-                className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-50"
-              >
-                Export CSV
-              </button>
-            )}
-          </div>
+        {/* ── Sidebar ─────────────────────────────────────────────── */}
+        <aside className="flex flex-col gap-4 lg:sticky lg:top-5 lg:self-start">
 
-          {/* Filters */}
-          <div className="mt-5 flex flex-wrap items-end gap-3 border-b pb-5">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted">From</label>
-              <input
-                type="date"
-                className="rounded-md border px-2 py-1.5 text-sm"
-                value={filter.from}
-                onChange={(e) => setFilter((f) => ({ ...f, from: e.target.value }))}
-              />
+          {/* Brand + user card */}
+          <div className="rounded-2xl bg-card p-4 shadow-sm flex items-center gap-4">
+            <div className="flex flex-col items-center gap-1 shrink-0">
+              <Image src="/logo.webp" alt="ShiftSync" width={48} height={48} style={{ height: "auto" }} />
+              <p className="text-xs uppercase tracking-wide text-muted leading-none">ShiftSync</p>
             </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted">To</label>
-              <input
-                type="date"
-                className="rounded-md border px-2 py-1.5 text-sm"
-                value={filter.to}
-                onChange={(e) => setFilter((f) => ({ ...f, to: e.target.value }))}
-              />
-            </div>
-            {user?.role === "ADMIN" && (
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-muted">Location</label>
-                <select
-                  className="rounded-md border px-2 py-1.5 text-sm"
-                  value={filter.locationId}
-                  onChange={(e) => setFilter((f) => ({ ...f, locationId: e.target.value }))}
-                >
-                  <option value="">All locations</option>
-                  {Object.entries(LOCATION_LABELS).map(([id, name]) => (
-                    <option key={id} value={id}>{name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <button
-              onClick={() => void load(0, filter)}
-              disabled={isFetching}
-              className="rounded-md bg-primary px-4 py-1.5 text-sm text-white disabled:opacity-60"
-            >
-              {isFetching ? "Loading…" : "Apply"}
-            </button>
-          </div>
-
-          {/* Table */}
-          <div className="mt-4">
-            {logs.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted">
-                {isFetching ? "Loading entries…" : "No audit entries found for the selected filters."}
+            <div className="h-10 w-px bg-border shrink-0" />
+            <div className="flex-1 text-right">
+              <p className="text-xs uppercase tracking-wide text-muted">{user?.role} Console</p>
+              <p className="mt-0.5 text-base font-semibold leading-tight">{user?.name}</p>
+              <p className="mt-0.5 text-xs text-muted">
+                {user?.locations?.join(", ") ?? user?.email}
               </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b text-left text-muted">
-                      <th className="pb-2 pr-4 font-medium">When</th>
-                      <th className="pb-2 pr-4 font-medium">Action</th>
-                      <th className="pb-2 pr-4 font-medium">By</th>
-                      <th className="pb-2 pr-4 font-medium">Location</th>
-                      <th className="pb-2 pr-4 font-medium">Before</th>
-                      <th className="pb-2 font-medium">After</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {logs.map((log) => {
-                      const after = log.after ?? {};
-                      const before = log.before ?? {};
-                      const locId = String(after.locationId ?? before.locationId ?? "");
-                      const locName = LOCATION_LABELS[locId] ?? locId || "—";
-                      const actionColor =
-                        log.action.includes("DELETED") || log.action.includes("UNASSIGNED") ? "text-danger" :
-                        log.action.includes("CREATED") || log.action.includes("APPROVED") ? "text-success" :
-                        log.action.includes("PUBLISHED") ? "text-primary" :
-                        log.action.includes("REJECTED") || log.action.includes("EXPIRED") || log.action.includes("CANCELLED") ? "text-warning" :
-                        "text-foreground";
+            </div>
+          </div>
 
-                      return (
-                        <tr key={log.id} className="border-b last:border-0 align-top hover:bg-slate-50">
-                          <td className="py-2.5 pr-4 whitespace-nowrap text-muted">
-                            {new Date(log.createdAt).toLocaleString(undefined, {
-                              month: "short", day: "numeric",
-                              hour: "2-digit", minute: "2-digit",
-                            })}
-                          </td>
-                          <td className={`py-2.5 pr-4 font-medium whitespace-nowrap ${actionColor}`}>
-                            {log.action.replace(/_/g, " ")}
-                          </td>
-                          <td className="py-2.5 pr-4 whitespace-nowrap">{log.actorName}</td>
-                          <td className="py-2.5 pr-4 whitespace-nowrap text-muted">{locName}</td>
-                          <td className="py-2.5 pr-4 max-w-[200px] truncate text-muted" title={summarise(before)}>
-                            {summarise(before)}
-                          </td>
-                          <td className="py-2.5 max-w-[220px] truncate text-muted" title={summarise(after)}>
-                            {summarise(after)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+          {/* Navigation */}
+          <nav className="rounded-2xl bg-card p-3 shadow-sm flex flex-col gap-1">
+            <a
+              href="/"
+              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted hover:bg-slate-50 hover:text-foreground transition-colors"
+            >
+              <span className="text-base">⊞</span>
+              Dashboard
+            </a>
+            <a
+              href="/audit"
+              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium bg-primary/8 text-primary transition-colors"
+              aria-current="page"
+            >
+              <span className="text-base">▤</span>
+              Audit Trail
+            </a>
+          </nav>
+
+          {/* Logout */}
+          <button
+            onClick={logout}
+            disabled={isLoggingOut}
+            className="rounded-2xl border bg-card px-3 py-2.5 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isLoggingOut ? "Logging out…" : "Logout"}
+          </button>
+        </aside>
+
+        {/* ── Main content ─────────────────────────────────────────── */}
+        <main className="space-y-5">
+          <header className="rounded-2xl bg-card p-5 shadow-sm">
+            <h2 className="text-2xl font-semibold">Audit Trail</h2>
+            <p className="mt-1 text-sm text-muted">All schedule changes — who, when, and what changed.</p>
+          </header>
+
+          <div className="rounded-2xl bg-card p-6 shadow-sm">
+            {/* Filters */}
+            <div className="flex flex-wrap items-end gap-3 border-b pb-5">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted">From</label>
+                <input
+                  type="date"
+                  className="rounded-md border px-2 py-1.5 text-sm"
+                  value={filter.from}
+                  onChange={(e) => setFilter((f) => ({ ...f, from: e.target.value }))}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted">To</label>
+                <input
+                  type="date"
+                  className="rounded-md border px-2 py-1.5 text-sm"
+                  value={filter.to}
+                  onChange={(e) => setFilter((f) => ({ ...f, to: e.target.value }))}
+                />
+              </div>
+              {user?.role === "ADMIN" && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted">Location</label>
+                  <select
+                    className="rounded-md border px-2 py-1.5 text-sm"
+                    value={filter.locationId}
+                    onChange={(e) => setFilter((f) => ({ ...f, locationId: e.target.value }))}
+                  >
+                    <option value="">All locations</option>
+                    {Object.entries(LOCATION_LABELS).map(([id, name]) => (
+                      <option key={id} value={id}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="flex items-center gap-2 ml-auto">
+                {user?.role === "ADMIN" && (
+                  <button
+                    onClick={exportCsv}
+                    className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-50 cursor-pointer"
+                  >
+                    Export CSV
+                  </button>
+                )}
+                <button
+                  onClick={() => void load(0, filter)}
+                  disabled={isFetching}
+                  className="rounded-md bg-primary px-4 py-1.5 text-sm text-white disabled:opacity-60 cursor-pointer"
+                >
+                  {isFetching ? "Loading…" : "Apply"}
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="mt-4">
+              {logs.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted">
+                  {isFetching ? "Loading entries…" : "No audit entries found for the selected filters."}
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b text-left text-muted">
+                        <th className="pb-2 pr-4 font-medium">When</th>
+                        <th className="pb-2 pr-4 font-medium">Action</th>
+                        <th className="pb-2 pr-4 font-medium">By</th>
+                        <th className="pb-2 pr-4 font-medium">Location</th>
+                        <th className="pb-2 pr-4 font-medium">Before</th>
+                        <th className="pb-2 font-medium">After</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {logs.map((log) => {
+                        const after = log.after ?? {};
+                        const before = log.before ?? {};
+                        const locId = String(after.locationId ?? before.locationId ?? "");
+                        const locName = (LOCATION_LABELS[locId] ?? locId) || "—";
+                        const actionColor =
+                          log.action.includes("DELETED") || log.action.includes("UNASSIGNED") ? "text-danger" :
+                          log.action.includes("CREATED") || log.action.includes("APPROVED") ? "text-success" :
+                          log.action.includes("PUBLISHED") ? "text-primary" :
+                          log.action.includes("REJECTED") || log.action.includes("EXPIRED") || log.action.includes("CANCELLED") ? "text-warning" :
+                          "text-foreground";
+
+                        return (
+                          <tr key={log.id} className="border-b last:border-0 align-top hover:bg-slate-50">
+                            <td className="py-2.5 pr-4 whitespace-nowrap text-muted">
+                              {new Date(log.createdAt).toLocaleString(undefined, {
+                                month: "short", day: "numeric",
+                                hour: "2-digit", minute: "2-digit",
+                              })}
+                            </td>
+                            <td className={`py-2.5 pr-4 font-medium whitespace-nowrap ${actionColor}`}>
+                              {log.action.replace(/_/g, " ")}
+                            </td>
+                            <td className="py-2.5 pr-4 whitespace-nowrap">{log.actorName}</td>
+                            <td className="py-2.5 pr-4 whitespace-nowrap text-muted">{locName}</td>
+                            <td className="py-2.5 pr-4 max-w-[200px] truncate text-muted" title={summarise(before)}>
+                              {summarise(before)}
+                            </td>
+                            <td className="py-2.5 max-w-[220px] truncate text-muted" title={summarise(after)}>
+                              {summarise(after)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Pagination */}
+            {total > PAGE_SIZE && (
+              <div className="mt-4 flex items-center gap-3 border-t pt-4 text-sm">
+                <button
+                  onClick={() => void load(page - 1)}
+                  disabled={page === 0 || isFetching}
+                  className="rounded-md border px-3 py-1 disabled:opacity-40 cursor-pointer"
+                >
+                  ← Prev
+                </button>
+                <span className="text-muted">
+                  Page {page + 1} of {Math.ceil(total / PAGE_SIZE)} &nbsp;·&nbsp; {total} entries
+                </span>
+                <button
+                  onClick={() => void load(page + 1)}
+                  disabled={(page + 1) * PAGE_SIZE >= total || isFetching}
+                  className="rounded-md border px-3 py-1 disabled:opacity-40 cursor-pointer"
+                >
+                  Next →
+                </button>
               </div>
             )}
           </div>
-
-          {/* Pagination */}
-          {total > PAGE_SIZE && (
-            <div className="mt-4 flex items-center gap-3 border-t pt-4 text-sm">
-              <button
-                onClick={() => void load(page - 1)}
-                disabled={page === 0 || isFetching}
-                className="rounded-md border px-3 py-1 disabled:opacity-40"
-              >
-                ← Prev
-              </button>
-              <span className="text-muted">
-                Page {page + 1} of {Math.ceil(total / PAGE_SIZE)} &nbsp;·&nbsp; {total} entries
-              </span>
-              <button
-                onClick={() => void load(page + 1)}
-                disabled={(page + 1) * PAGE_SIZE >= total || isFetching}
-                className="rounded-md border px-3 py-1 disabled:opacity-40"
-              >
-                Next →
-              </button>
-            </div>
-          )}
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
