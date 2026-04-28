@@ -94,6 +94,7 @@ const state: AppState = {
       endsAt: iso(23),
       published: false,
       assigneeIds: ["u-staff-1"],
+      assigneeNames: [],
       createdBy: "u-manager-1",
     },
     {
@@ -105,6 +106,7 @@ const state: AppState = {
       endsAt: iso(26),
       published: false,
       assigneeIds: [],
+      assigneeNames: [],
       createdBy: "u-manager-1",
     },
   ],
