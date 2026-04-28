@@ -304,4 +304,4 @@ The following items were listed as deliberately unspecified in the assessment br
 
 ---
 
-*Documentation generated for the ShiftSync assessment submission — April 2026.*
+ 
