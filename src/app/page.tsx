@@ -16,6 +16,7 @@ type Shift = {
   endsAt: string;
   published: boolean;
   assigneeIds: string[];
+  assigneeNames: string[];
 };
 
 type Swap = {
@@ -177,12 +178,6 @@ export default function Home() {
     actorName: string; actorRole: string;
     before: Record<string, unknown> | null; after: Record<string, unknown> | null;
   };
-  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
-  const [auditPage, setAuditPage] = useState(0);
-  const [auditTotal, setAuditTotal] = useState(0);
-  const [auditFilter, setAuditFilter] = useState({ from: "", to: "", locationId: "" });
-  const [isLoadingAudit, setIsLoadingAudit] = useState(false);
-  const [auditVisible, setAuditVisible] = useState(false);
 
   const [successToast, setSuccessToast] = useState("");
   const [errorToast, setErrorToast] = useState("");
@@ -198,6 +193,7 @@ export default function Home() {
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
   const [selectedAssignees, setSelectedAssignees] = useState<Record<string, string>>({});
   const [assigningShiftId, setAssigningShiftId] = useState<string | null>(null);
+  const [unassigningId, setUnassigningId] = useState<string | null>(null); // "shiftId:userId"
   const [isPublishingWeek, setIsPublishingWeek] = useState(false);
   const [isUnpublishingWeek, setIsUnpublishingWeek] = useState(false);
   const [claimingSwapId, setClaimingSwapId] = useState<string | null>(null);
@@ -425,32 +421,6 @@ export default function Home() {
     }
   }
 
-  async function loadAudit(page = 0, filter = auditFilter) {
-    if (isLoadingAudit) return;
-    setIsLoadingAudit(true);
-    try {
-      const params = new URLSearchParams({ page: String(page) });
-      if (filter.from) params.set("from", filter.from);
-      if (filter.to) params.set("to", filter.to);
-      if (filter.locationId) params.set("locationId", filter.locationId);
-      const res = await fetch(`/api/audit?${params.toString()}`, { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
-      setAuditLogs(data.logs ?? []);
-      setAuditTotal(data.total ?? 0);
-      setAuditPage(page);
-    } finally {
-      setIsLoadingAudit(false);
-    }
-  }
-
-  function exportAudit() {
-    const params = new URLSearchParams();
-    if (auditFilter.from) params.set("from", auditFilter.from);
-    if (auditFilter.to) params.set("to", auditFilter.to);
-    if (auditFilter.locationId) params.set("locationId", auditFilter.locationId);
-    window.open(`/api/audit/export?${params.toString()}`, "_blank");
-  }
 
   async function savePref(pref: "IN_APP" | "IN_APP_EMAIL") {
     if (isSavingPref) return;
@@ -663,6 +633,29 @@ export default function Home() {
       setSuccessToast("Shift assigned.");
     } finally {
       setAssigningShiftId(null);
+    }
+  }
+
+  async function unassignStaff(shiftId: string, userId: string) {
+    const key = `${shiftId}:${userId}`;
+    if (unassigningId) return;
+    setUnassigningId(key);
+    setErrorToast("");
+    try {
+      const res = await fetch(`/api/shifts/${shiftId}/assign`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setErrorToast(body.error ?? "Failed to unassign");
+        return;
+      }
+      await refresh();
+      setSuccessToast("Staff unassigned.");
+    } finally {
+      setUnassigningId(null);
     }
   }
 
@@ -1161,6 +1154,20 @@ export default function Home() {
             )}
           </div>
 
+          {/* ── Audit Trail link (managers + admins) ─────────────── */}
+          {(user.role === "MANAGER" || user.role === "ADMIN") && (
+            <a
+              href="/audit"
+              className="flex items-center justify-between rounded-2xl border bg-card px-4 py-3 shadow-sm text-sm hover:bg-slate-50 transition-colors"
+            >
+              <div>
+                <p className="font-medium">Audit Trail</p>
+                <p className="text-xs text-muted mt-0.5">All schedule changes</p>
+              </div>
+              <span className="text-muted text-base">→</span>
+            </a>
+          )}
+
           <button
             onClick={logout}
             disabled={isLoggingOut}
@@ -1173,7 +1180,6 @@ export default function Home() {
         <main className="space-y-5">
           <header className="rounded-2xl bg-card p-5 shadow-sm">
             <h2 className="text-2xl font-semibold">Operations Dashboard</h2>
-            <p className="text-sm text-muted">Real scheduling · approvals · compliance signals.</p>
           </header>
 
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -1185,307 +1191,44 @@ export default function Home() {
             ))}
           </section>
 
-          {/* ── Shifts ─────────────────────────────────────────────────── */}
-          <section className="rounded-2xl bg-card p-5 shadow-sm">
-            <h3 className="text-lg font-semibold">
-              {user.role === "STAFF" ? "My Assigned Shifts" : "Shifts"}
-            </h3>
-            <div className="mt-3 space-y-3">
-              {shifts.length === 0 && (
-                <p className="text-sm text-muted">No shifts found.</p>
-              )}
-              {shifts.map((shift) => {
-                const overnight = isOvernight(shift.startsAt, shift.endsAt);
-                return (
-                <div key={shift.id} className="rounded-xl border p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <p className="font-medium">
-                        <span className="text-xs font-bold text-muted mr-1">#{shift.seqId}</span>
-                        {shift.requiredSkill}{" "}
-                        <span className="text-muted">@ {LOCATION_LABELS[shift.locationId] ?? shift.locationId}</span>
-                        {overnight && (
-                          <span className="ml-1.5 rounded bg-warning/10 px-1 py-0.5 text-xs text-warning">overnight</span>
-                        )}
-                      </p>
-                      <p className="text-sm text-muted">
-                        {fmtShift(shift.startsAt, shift.endsAt)}
-                      </p>
-                      <p className="text-xs text-muted">
-                        Assigned {shift.assigneeIds.length}/{shift.headcountNeeded}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {shift.published ? (
-                        <span className="rounded-md bg-success/10 px-2 py-1 text-xs text-success">Published</span>
-                      ) : (
-                        <span className="rounded-md bg-warning/10 px-2 py-1 text-xs text-warning">Draft</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Manager/Admin actions */}
-                  {(user.role === "MANAGER" || user.role === "ADMIN") && (
-                    <>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {/* Assign staff */}
-                        <select
-                          className="rounded-md border px-2 py-1 text-xs"
-                          value={selectedAssignees[shift.id] ?? ""}
-                          onChange={(e) => {
-                            setSelectedAssignees((cur) => ({ ...cur, [shift.id]: e.target.value }));
-                            setSimResults((cur) => { const n = { ...cur }; delete n[shift.id]; return n; });
-                          }}
-                          disabled={assigningShiftId === shift.id}
-                        >
-                          <option value="">Assign staff…</option>
-                          {staffOptions
-                            .filter(
-                              (s) =>
-                                s.certifications.includes(shift.locationId) &&
-                                s.skills.includes(shift.requiredSkill) &&
-                                !shift.assigneeIds.includes(s.id),
-                            )
-                            .map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                              </option>
-                            ))}
-                        </select>
-                        <button
-                          type="button"
-                          disabled={!selectedAssignees[shift.id] || simulatingShiftId === shift.id}
-                          onClick={() => simulateAssign(shift.id)}
-                          className="rounded-md border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-70"
-                        >
-                          {simulatingShiftId === shift.id ? "Checking…" : "Preview"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            !selectedAssignees[shift.id] ||
-                            assigningShiftId === shift.id ||
-                            simResults[shift.id]?.hardBlocked === true
-                          }
-                          onClick={() => assignShift(shift.id)}
-                          className="rounded-md border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-70"
-                        >
-                          {assigningShiftId === shift.id ? "Assigning…" : "Assign"}
-                        </button>
-
-                        {/* Simulation result badge */}
-                        {simResults[shift.id] && (() => {
-                          const sim = simResults[shift.id];
-                          const hasBlock = sim.warnings.some((w) => w.severity === "block");
-                          return (
-                            <span className={`rounded px-2 py-1 text-xs font-semibold ${hasBlock ? "bg-danger/10 text-danger" : sim.warnings.length ? "bg-warning/10 text-warning" : "bg-success/10 text-success"}`}>
-                              {hasBlock ? "Blocked" : sim.warnings.length ? `${sim.warnings.length} warning(s)` : "Clear"}
-                            </span>
-                          );
-                        })()}
-
-                        {/* Publish / Unpublish */}
-                        {!shift.published ? (
-                          <button
-                            disabled={publishingShiftId === shift.id}
-                            onClick={() => publishShift(shift.id)}
-                            className="rounded-md bg-primary px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
-                          >
-                            {publishingShiftId === shift.id ? "Publishing…" : "Publish"}
-                          </button>
-                        ) : (
-                          <button
-                            disabled={unpublishingShiftId === shift.id}
-                            onClick={() => unpublishShift(shift.id)}
-                            className="rounded-md border px-2 py-1 text-xs text-danger disabled:cursor-not-allowed disabled:opacity-70"
-                          >
-                            {unpublishingShiftId === shift.id ? "Unpublishing…" : "Unpublish"}
-                          </button>
-                        )}
-
-                        {/* Edit */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingShiftId(editingShiftId === shift.id ? null : shift.id);
-                            setEditForm({
-                              startsAt: "",
-                              endsAt: "",
-                              requiredSkill: shift.requiredSkill,
-                              headcountNeeded: shift.headcountNeeded,
-                            });
-                          }}
-                          className="rounded-md border px-2 py-1 text-xs"
-                        >
-                          {editingShiftId === shift.id ? "Cancel" : "Edit"}
-                        </button>
-
-                        {/* Delete */}
-                        <button
-                          type="button"
-                          disabled={deletingShiftId === shift.id}
-                          onClick={() => deleteShift(shift.id)}
-                          className="rounded-md border border-danger px-2 py-1 text-xs text-danger disabled:cursor-not-allowed disabled:opacity-70"
-                        >
-                          {deletingShiftId === shift.id ? "Deleting…" : "Delete"}
-                        </button>
-                      </div>
-
-                      {/* Simulation detail panel */}
-                      {simResults[shift.id] && simResults[shift.id].warnings.length > 0 && (
-                        <div className="mt-2 rounded-lg border p-3 text-xs space-y-1">
-                          <p className="font-semibold text-slate-600 uppercase tracking-wide">
-                            What-if preview — {simResults[shift.id].assigneeName}
-                          </p>
-                          <p className="text-muted">
-                            Daily: <strong>{simResults[shift.id].projectedDailyHours.toFixed(1)}h</strong>
-                            {" · "}Weekly: <strong>{simResults[shift.id].projectedWeeklyHours.toFixed(1)}h</strong>
-                            {" · "}Consecutive days: <strong>{simResults[shift.id].consecutiveDays}</strong>
-                          </p>
-                          {simResults[shift.id].warnings.map((w) => (
-                            <div key={w.code} className={`flex items-start gap-1 rounded px-2 py-1 ${w.severity === "block" ? "bg-danger/10 text-danger" : "bg-warning/10 text-warning"}`}>
-                              <span>{w.severity === "block" ? "✗" : "⚠"}</span>
-                              <span>{w.message}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Inline edit form */}
-                      {editingShiftId === shift.id && (
-                        <div className="mt-3 space-y-2 rounded-lg border p-3">
-                          <p className="text-xs font-semibold text-muted uppercase tracking-wide">
-                            Edit shift — any pending swaps will be auto-cancelled
-                          </p>
-                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                            <div>
-                              <label className="mb-1 block text-xs text-muted">Start time</label>
-                              <input
-                                type="datetime-local"
-                                className="w-full rounded-md border px-2 py-1 text-xs"
-                                value={editForm.startsAt}
-                                onChange={(e) => setEditForm((v) => ({ ...v, startsAt: e.target.value }))}
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-xs text-muted">End time</label>
-                              <input
-                                type="datetime-local"
-                                className="w-full rounded-md border px-2 py-1 text-xs"
-                                value={editForm.endsAt}
-                                onChange={(e) => setEditForm((v) => ({ ...v, endsAt: e.target.value }))}
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-xs text-muted">Required skill</label>
-                              <select
-                                className="w-full rounded-md border px-2 py-1 text-xs"
-                                value={editForm.requiredSkill}
-                                onChange={(e) => setEditForm((v) => ({ ...v, requiredSkill: e.target.value }))}
-                              >
-                                <option value="bartender">Bartender</option>
-                                <option value="line_cook">Line Cook</option>
-                                <option value="server">Server</option>
-                                <option value="host">Host</option>
-                              </select>
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-xs text-muted">Headcount needed</label>
-                              <input
-                                type="number"
-                                min={1}
-                                className="w-full rounded-md border px-2 py-1 text-xs"
-                                value={editForm.headcountNeeded}
-                                onChange={(e) =>
-                                  setEditForm((v) => ({ ...v, headcountNeeded: Number(e.target.value) }))
-                                }
-                              />
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            disabled={isSavingShift}
-                            onClick={() => saveShiftEdit(shift.id)}
-                            className="rounded-md bg-primary px-3 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
-                          >
-                            {isSavingShift ? "Saving…" : "Save Changes"}
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {/* Staff swap/drop actions */}
-                  {user.role === "STAFF" && (
-                    <div className="mt-2">
-                      {swapFormShiftId === shift.id ? (
-                        <div className="mt-2 space-y-2 rounded-lg border p-3">
-                          <div className="flex gap-2">
-                            <label className="flex items-center gap-1 text-xs">
-                              <input
-                                type="radio"
-                                checked={swapFormType === "DROP"}
-                                onChange={() => setSwapFormType("DROP")}
-                              />{" "}
-                              Drop shift
-                            </label>
-                            <label className="flex items-center gap-1 text-xs">
-                              <input
-                                type="radio"
-                                checked={swapFormType === "SWAP"}
-                                onChange={() => setSwapFormType("SWAP")}
-                              />{" "}
-                              Swap with colleague
-                            </label>
-                          </div>
-                          {swapFormType === "SWAP" && (
-                            <p className="text-xs text-muted">
-                              A swap request will be sent to a colleague. They can accept, then a manager approves.
-                            </p>
-                          )}
-                          {swapFormType === "DROP" && (
-                            <p className="text-xs text-muted">
-                              Your shift will be offered for pickup. Another staff can claim it; manager approves.
-                            </p>
-                          )}
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              disabled={isCreatingSwap}
-                              onClick={submitSwapRequest}
-                              className="rounded-md bg-primary px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                              {isCreatingSwap ? "Submitting…" : "Submit"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSwapFormShiftId(null)}
-                              className="rounded-md border px-2 py-1 text-xs"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSwapFormShiftId(shift.id);
-                            setSwapFormType("DROP");
-                            setSwapFormTargetId("");
-                          }}
-                          className="mt-1 rounded-md border px-2 py-1 text-xs"
-                        >
-                          Request Swap / Drop
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-                );
-              })}
-            </div>
-          </section>
+          {/* ── Fairness Report (managers + admins) ───────────────────── */}
+          {(user.role === "MANAGER" || user.role === "ADMIN") && analytics.fairness.length > 0 && (
+            <section className="rounded-2xl bg-card p-5 shadow-sm">
+              <h3 className="text-lg font-semibold">Shift Distribution — Fairness Report</h3>
+              <p className="mt-1 text-sm text-muted">This week · who gets how many shifts and of which type.</p>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b text-left text-muted">
+                      <th className="pb-2 pr-3 font-medium">Staff</th>
+                      <th className="pb-2 pr-3 font-medium">Shifts</th>
+                      <th className="pb-2 pr-3 font-medium">Hours</th>
+                      <th className="pb-2 pr-3 font-medium">By Skill</th>
+                      <th className="pb-2 font-medium">By Location</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analytics.fairness.map((f) => (
+                      <tr key={f.userId} className="border-b last:border-0 align-top">
+                        <td className="py-2 pr-3 font-medium whitespace-nowrap">{f.name}</td>
+                        <td className="py-2 pr-3">{f.shiftCount}</td>
+                        <td className="py-2 pr-3">{Math.round(f.totalHours * 10) / 10}h</td>
+                        <td className="py-2 pr-3 text-muted">
+                          {Object.entries(f.bySkill).map(([skill, n]) => `${skill.replace("_", " ")} ×${n}`).join(", ")}
+                        </td>
+                        <td className="py-2 text-muted">
+                          {Object.entries(f.byLocation).map(([loc, n]) => `${LOCATION_LABELS[loc] ?? loc} ×${n}`).join(", ")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-2 text-xs text-muted">
+                If one staff member has significantly more or fewer shifts than peers with the same skill set, that may indicate a bias in scheduling. Cross-reference with the Audit Trail to see who made each assignment.
+              </p>
+            </section>
+          )}
 
           {/* ── Swap Requests ─────────────────────────────────────────── */}
           <section className="rounded-2xl bg-card p-5 shadow-sm">
@@ -1679,203 +1422,6 @@ export default function Home() {
                 </div>
               </div>
             )}
-            </section>
-          )}
-
-          {/* ── Fairness Report (managers + admins) ───────────────────── */}
-          {(user.role === "MANAGER" || user.role === "ADMIN") && analytics.fairness.length > 0 && (
-            <section className="rounded-2xl bg-card p-5 shadow-sm">
-              <h3 className="text-lg font-semibold">Shift Distribution — Fairness Report</h3>
-              <p className="mt-1 text-sm text-muted">This week · who gets how many shifts and of which type.</p>
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b text-left text-muted">
-                      <th className="pb-2 pr-3 font-medium">Staff</th>
-                      <th className="pb-2 pr-3 font-medium">Shifts</th>
-                      <th className="pb-2 pr-3 font-medium">Hours</th>
-                      <th className="pb-2 pr-3 font-medium">By Skill</th>
-                      <th className="pb-2 font-medium">By Location</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analytics.fairness.map((f) => (
-                      <tr key={f.userId} className="border-b last:border-0 align-top">
-                        <td className="py-2 pr-3 font-medium whitespace-nowrap">{f.name}</td>
-                        <td className="py-2 pr-3">{f.shiftCount}</td>
-                        <td className="py-2 pr-3">{Math.round(f.totalHours * 10) / 10}h</td>
-                        <td className="py-2 pr-3 text-muted">
-                          {Object.entries(f.bySkill).map(([skill, n]) => `${skill.replace("_", " ")} ×${n}`).join(", ")}
-                        </td>
-                        <td className="py-2 text-muted">
-                          {Object.entries(f.byLocation).map(([loc, n]) => `${LOCATION_LABELS[loc] ?? loc} ×${n}`).join(", ")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="mt-2 text-xs text-muted">
-                If one staff member has significantly more or fewer shifts than peers with the same skill set, that may indicate a bias in scheduling. Cross-reference with the Audit Trail to see who made each assignment.
-              </p>
-            </section>
-          )}
-
-          {/* ── Audit Trail (managers + admins) ───────────────────────── */}
-          {(user.role === "MANAGER" || user.role === "ADMIN") && (
-            <section className="rounded-2xl bg-card p-5 shadow-sm">
-              <button
-                className="flex w-full items-center justify-between"
-                onClick={() => {
-                  if (!auditVisible) void loadAudit(0);
-                  setAuditVisible((v) => !v);
-                }}
-              >
-                <h3 className="text-lg font-semibold">Audit Trail</h3>
-                <span className="text-xs text-muted">{auditVisible ? "▲ Hide" : "▼ Show"}</span>
-              </button>
-
-              {auditVisible && (
-                <div className="mt-4 space-y-4">
-                  {/* Filters */}
-                  <div className="flex flex-wrap gap-2 items-end">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-muted">From</label>
-                      <input
-                        type="date"
-                        className="rounded-md border px-2 py-1 text-sm"
-                        value={auditFilter.from}
-                        onChange={(e) => setAuditFilter((f) => ({ ...f, from: e.target.value }))}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-muted">To</label>
-                      <input
-                        type="date"
-                        className="rounded-md border px-2 py-1 text-sm"
-                        value={auditFilter.to}
-                        onChange={(e) => setAuditFilter((f) => ({ ...f, to: e.target.value }))}
-                      />
-                    </div>
-                    {user.role === "ADMIN" && (
-                      <div className="flex flex-col gap-1">
-                        <label className="text-xs text-muted">Location</label>
-                        <select
-                          className="rounded-md border px-2 py-1 text-sm"
-                          value={auditFilter.locationId}
-                          onChange={(e) => setAuditFilter((f) => ({ ...f, locationId: e.target.value }))}
-                        >
-                          <option value="">All locations</option>
-                          <option value="l-east">Harbor View</option>
-                          <option value="l-west">Pier Grill</option>
-                        </select>
-                      </div>
-                    )}
-                    <button
-                      onClick={() => void loadAudit(0)}
-                      disabled={isLoadingAudit}
-                      className="rounded-md bg-primary px-3 py-1.5 text-sm text-white disabled:opacity-60"
-                    >
-                      {isLoadingAudit ? "Loading…" : "Apply"}
-                    </button>
-                    {user.role === "ADMIN" && (
-                      <button
-                        onClick={exportAudit}
-                        className="rounded-md border px-3 py-1.5 text-sm"
-                      >
-                        Export CSV
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Log table */}
-                  {auditLogs.length === 0 ? (
-                    <p className="text-sm text-muted">No audit entries found.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs border-collapse">
-                        <thead>
-                          <tr className="border-b text-left text-muted">
-                            <th className="pb-2 pr-3 font-medium">When</th>
-                            <th className="pb-2 pr-3 font-medium">Action</th>
-                            <th className="pb-2 pr-3 font-medium">By</th>
-                            <th className="pb-2 pr-3 font-medium">Location</th>
-                            <th className="pb-2 pr-3 font-medium">Before</th>
-                            <th className="pb-2 font-medium">After</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {auditLogs.map((log) => {
-                            const after = log.after ?? {};
-                            const before = log.before ?? {};
-                            const locId = String(after.locationId ?? before.locationId ?? "");
-                            const locName = locId === "l-east" ? "Harbor View" : locId === "l-west" ? "Pier Grill" : locId || "—";
-                            const actionColor =
-                              log.action.includes("DELETED") ? "text-danger" :
-                              log.action.includes("CREATED") ? "text-success" :
-                              log.action.includes("PUBLISHED") ? "text-primary" :
-                              log.action.includes("APPROVED") ? "text-success" :
-                              log.action.includes("REJECTED") || log.action.includes("EXPIRED") ? "text-warning" :
-                              "text-foreground";
-
-                            function summarise(obj: Record<string, unknown>) {
-                              return Object.entries(obj)
-                                .filter(([k]) => !["locationId", "shiftId", "swapId"].includes(k))
-                                .map(([k, v]) => {
-                                  if (v instanceof Object && "toISOString" in (v as object)) {
-                                    return `${k}: ${new Date(v as string).toLocaleString()}`;
-                                  }
-                                  if (Array.isArray(v)) return `${k}: [${(v as unknown[]).join(", ")}]`;
-                                  return `${k}: ${String(v ?? "—")}`;
-                                })
-                                .join(" · ") || "—";
-                            }
-
-                            return (
-                              <tr key={log.id} className="border-b last:border-0 align-top">
-                                <td className="py-2 pr-3 text-muted whitespace-nowrap">
-                                  {new Date(log.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                                </td>
-                                <td className={`py-2 pr-3 font-medium whitespace-nowrap ${actionColor}`}>
-                                  {log.action.replace(/_/g, " ")}
-                                </td>
-                                <td className="py-2 pr-3 whitespace-nowrap">{log.actorName}</td>
-                                <td className="py-2 pr-3 whitespace-nowrap text-muted">{locName}</td>
-                                <td className="py-2 pr-3 text-muted max-w-[160px] truncate">{summarise(before)}</td>
-                                <td className="py-2 text-muted max-w-[200px] truncate">{summarise(after)}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  {/* Pagination */}
-                  {auditTotal > 25 && (
-                    <div className="flex items-center gap-3 text-sm">
-                      <button
-                        onClick={() => void loadAudit(auditPage - 1)}
-                        disabled={auditPage === 0 || isLoadingAudit}
-                        className="rounded-md border px-2 py-1 disabled:opacity-40"
-                      >
-                        ← Prev
-                      </button>
-                      <span className="text-muted">
-                        Page {auditPage + 1} of {Math.ceil(auditTotal / 25)}
-                        {" "}({auditTotal} entries)
-                      </span>
-                      <button
-                        onClick={() => void loadAudit(auditPage + 1)}
-                        disabled={(auditPage + 1) * 25 >= auditTotal || isLoadingAudit}
-                        className="rounded-md border px-2 py-1 disabled:opacity-40"
-                      >
-                        Next →
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
             </section>
           )}
 
@@ -2095,6 +1641,353 @@ export default function Home() {
               </div>
             </section>
           )}
+
+          {/* ── Shifts ─────────────────────────────────────────────────── */}
+          <section className="rounded-2xl bg-card p-5 shadow-sm">
+            <h3 className="text-lg font-semibold">
+              {user.role === "STAFF" ? "My Assigned Shifts" : "Shifts"}
+            </h3>
+            <div className="mt-3 space-y-3">
+              {shifts.length === 0 && (
+                <p className="text-sm text-muted">No shifts found.</p>
+              )}
+              {shifts.map((shift) => {
+                const overnight = isOvernight(shift.startsAt, shift.endsAt);
+                return (
+                <div key={shift.id} className="rounded-xl border p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium">
+                        <span className="text-xs font-bold text-muted mr-1">#{shift.seqId}</span>
+                        {shift.requiredSkill}{" "}
+                        <span className="text-muted">@ {LOCATION_LABELS[shift.locationId] ?? shift.locationId}</span>
+                        {overnight && (
+                          <span className="ml-1.5 rounded bg-warning/10 px-1 py-0.5 text-xs text-warning">overnight</span>
+                        )}
+                      </p>
+                      <p className="text-sm text-muted">
+                        {fmtShift(shift.startsAt, shift.endsAt)}
+                      </p>
+                      <p className="text-xs text-muted">
+                        Assigned {shift.assigneeIds.length}/{shift.headcountNeeded}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {shift.published ? (
+                        shift.assigneeNames.length > 0 ? (
+                          <span className="rounded-md bg-success/10 px-2 py-1 text-xs text-success">
+                            Published · {shift.assigneeNames.join(", ")}
+                          </span>
+                        ) : (
+                          <span className="rounded-md bg-warning/10 px-2 py-1 text-xs text-warning">
+                            Published · Unassigned
+                          </span>
+                        )
+                      ) : (
+                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-500">Draft</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Manager/Admin actions */}
+                  {(user.role === "MANAGER" || user.role === "ADMIN") && (
+                    <>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {/* Assign staff — only for published shifts */}
+                        {!shift.published && (
+                          <span className="rounded-md border border-dashed px-2 py-1 text-xs text-muted italic">
+                            Publish shift to enable assignment
+                          </span>
+                        )}
+                        {shift.published && shift.assigneeIds.length >= shift.headcountNeeded && (
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="text-xs text-muted italic mr-1">Full — reassign:</span>
+                            {shift.assigneeNames.map((name, i) => {
+                              const uid = shift.assigneeIds[i];
+                              const key = `${shift.id}:${uid}`;
+                              const removing = unassigningId === key;
+                              return removing ? (
+                                <span key={uid} className="flex items-center gap-1 rounded border border-dashed px-2 py-1 text-xs text-muted italic">
+                                  Removing {name}…
+                                </span>
+                              ) : (
+                                <span key={uid} className="flex items-center gap-1 rounded border px-2 py-1 text-xs">
+                                  {name}
+                                  <button
+                                    type="button"
+                                    disabled={!!unassigningId}
+                                    onClick={() => unassignStaff(shift.id, uid)}
+                                    className="ml-1 flex h-4 w-4 items-center justify-center rounded text-sm font-bold leading-none text-danger hover:bg-danger/10 disabled:opacity-40"
+                                    title={`Unassign ${name}`}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {shift.published && shift.assigneeIds.length < shift.headcountNeeded && (
+                          <>
+                        <select
+                          className="rounded-md border px-2 py-1 text-xs"
+                          value={selectedAssignees[shift.id] ?? ""}
+                          onChange={(e) => {
+                            setSelectedAssignees((cur) => ({ ...cur, [shift.id]: e.target.value }));
+                            setSimResults((cur) => { const n = { ...cur }; delete n[shift.id]; return n; });
+                          }}
+                          disabled={assigningShiftId === shift.id}
+                        >
+                          <option value="">Assign staff…</option>
+                          {staffOptions
+                            .filter(
+                              (s) =>
+                                s.certifications.includes(shift.locationId) &&
+                                s.skills.includes(shift.requiredSkill) &&
+                                !shift.assigneeIds.includes(s.id),
+                            )
+                            .map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          type="button"
+                          disabled={!selectedAssignees[shift.id] || simulatingShiftId === shift.id}
+                          onClick={() => simulateAssign(shift.id)}
+                          className="rounded-md border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {simulatingShiftId === shift.id ? "Checking…" : "Preview"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            !selectedAssignees[shift.id] ||
+                            assigningShiftId === shift.id ||
+                            simResults[shift.id]?.hardBlocked === true
+                          }
+                          onClick={() => assignShift(shift.id)}
+                          className="rounded-md border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {assigningShiftId === shift.id ? "Assigning…" : "Assign"}
+                        </button>
+                          </>
+                        )}
+
+                        {/* Simulation result badge */}
+                        {simResults[shift.id] && (() => {
+                          const sim = simResults[shift.id];
+                          const hasBlock = sim.warnings.some((w) => w.severity === "block");
+                          return (
+                            <span className={`rounded px-2 py-1 text-xs font-semibold ${hasBlock ? "bg-danger/10 text-danger" : sim.warnings.length ? "bg-warning/10 text-warning" : "bg-success/10 text-success"}`}>
+                              {hasBlock ? "Blocked" : sim.warnings.length ? `${sim.warnings.length} warning(s)` : "Clear"}
+                            </span>
+                          );
+                        })()}
+
+                        {/* Publish / Unpublish */}
+                        {!shift.published ? (
+                          <button
+                            disabled={publishingShiftId === shift.id}
+                            onClick={() => publishShift(shift.id)}
+                            className="rounded-md bg-primary px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            {publishingShiftId === shift.id ? "Publishing…" : "Publish"}
+                          </button>
+                        ) : (
+                          <button
+                            disabled={unpublishingShiftId === shift.id}
+                            onClick={() => unpublishShift(shift.id)}
+                            className="rounded-md border px-2 py-1 text-xs text-danger disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            {unpublishingShiftId === shift.id ? "Unpublishing…" : "Unpublish"}
+                          </button>
+                        )}
+
+                        {/* Edit */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingShiftId(editingShiftId === shift.id ? null : shift.id);
+                            setEditForm({
+                              startsAt: "",
+                              endsAt: "",
+                              requiredSkill: shift.requiredSkill,
+                              headcountNeeded: shift.headcountNeeded,
+                            });
+                          }}
+                          className="rounded-md border px-2 py-1 text-xs"
+                        >
+                          {editingShiftId === shift.id ? "Cancel" : "Edit"}
+                        </button>
+
+                        {/* Delete */}
+                        <button
+                          type="button"
+                          disabled={deletingShiftId === shift.id}
+                          onClick={() => deleteShift(shift.id)}
+                          className="rounded-md border border-danger px-2 py-1 text-xs text-danger disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {deletingShiftId === shift.id ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
+
+                      {/* Simulation detail panel */}
+                      {simResults[shift.id] && simResults[shift.id].warnings.length > 0 && (
+                        <div className="mt-2 rounded-lg border p-3 text-xs space-y-1">
+                          <p className="font-semibold text-slate-600 uppercase tracking-wide">
+                            What-if preview — {simResults[shift.id].assigneeName}
+                          </p>
+                          <p className="text-muted">
+                            Daily: <strong>{simResults[shift.id].projectedDailyHours.toFixed(1)}h</strong>
+                            {" · "}Weekly: <strong>{simResults[shift.id].projectedWeeklyHours.toFixed(1)}h</strong>
+                            {" · "}Consecutive days: <strong>{simResults[shift.id].consecutiveDays}</strong>
+                          </p>
+                          {simResults[shift.id].warnings.map((w) => (
+                            <div key={w.code} className={`flex items-start gap-1 rounded px-2 py-1 ${w.severity === "block" ? "bg-danger/10 text-danger" : "bg-warning/10 text-warning"}`}>
+                              <span>{w.severity === "block" ? "✗" : "⚠"}</span>
+                              <span>{w.message}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Inline edit form */}
+                      {editingShiftId === shift.id && (
+                        <div className="mt-3 space-y-2 rounded-lg border p-3">
+                          <p className="text-xs font-semibold text-muted uppercase tracking-wide">
+                            Edit shift — any pending swaps will be auto-cancelled
+                          </p>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <div>
+                              <label className="mb-1 block text-xs text-muted">Start time</label>
+                              <input
+                                type="datetime-local"
+                                className="w-full rounded-md border px-2 py-1 text-xs"
+                                value={editForm.startsAt}
+                                onChange={(e) => setEditForm((v) => ({ ...v, startsAt: e.target.value }))}
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-xs text-muted">End time</label>
+                              <input
+                                type="datetime-local"
+                                className="w-full rounded-md border px-2 py-1 text-xs"
+                                value={editForm.endsAt}
+                                onChange={(e) => setEditForm((v) => ({ ...v, endsAt: e.target.value }))}
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-xs text-muted">Required skill</label>
+                              <select
+                                className="w-full rounded-md border px-2 py-1 text-xs"
+                                value={editForm.requiredSkill}
+                                onChange={(e) => setEditForm((v) => ({ ...v, requiredSkill: e.target.value }))}
+                              >
+                                <option value="bartender">Bartender</option>
+                                <option value="line_cook">Line Cook</option>
+                                <option value="server">Server</option>
+                                <option value="host">Host</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-xs text-muted">Headcount needed</label>
+                              <input
+                                type="number"
+                                min={1}
+                                className="w-full rounded-md border px-2 py-1 text-xs"
+                                value={editForm.headcountNeeded}
+                                onChange={(e) =>
+                                  setEditForm((v) => ({ ...v, headcountNeeded: Number(e.target.value) }))
+                                }
+                              />
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={isSavingShift}
+                            onClick={() => saveShiftEdit(shift.id)}
+                            className="rounded-md bg-primary px-3 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            {isSavingShift ? "Saving…" : "Save Changes"}
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Staff swap/drop actions */}
+                  {user.role === "STAFF" && (
+                    <div className="mt-2">
+                      {swapFormShiftId === shift.id ? (
+                        <div className="mt-2 space-y-2 rounded-lg border p-3">
+                          <div className="flex gap-2">
+                            <label className="flex items-center gap-1 text-xs">
+                              <input
+                                type="radio"
+                                checked={swapFormType === "DROP"}
+                                onChange={() => setSwapFormType("DROP")}
+                              />{" "}
+                              Drop shift
+                            </label>
+                            <label className="flex items-center gap-1 text-xs">
+                              <input
+                                type="radio"
+                                checked={swapFormType === "SWAP"}
+                                onChange={() => setSwapFormType("SWAP")}
+                              />{" "}
+                              Swap with colleague
+                            </label>
+                          </div>
+                          {swapFormType === "SWAP" && (
+                            <p className="text-xs text-muted">
+                              A swap request will be sent to a colleague. They can accept, then a manager approves.
+                            </p>
+                          )}
+                          {swapFormType === "DROP" && (
+                            <p className="text-xs text-muted">
+                              Your shift will be offered for pickup. Another staff can claim it; manager approves.
+                            </p>
+                          )}
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              disabled={isCreatingSwap}
+                              onClick={submitSwapRequest}
+                              className="rounded-md bg-primary px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                              {isCreatingSwap ? "Submitting…" : "Submit"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSwapFormShiftId(null)}
+                              className="rounded-md border px-2 py-1 text-xs"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSwapFormShiftId(shift.id);
+                            setSwapFormType("DROP");
+                            setSwapFormTargetId("");
+                          }}
+                          className="mt-1 rounded-md border px-2 py-1 text-xs"
+                        >
+                          Request Swap / Drop
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                );
+              })}
+            </div>
+          </section>
         </main>
       </div>
 
